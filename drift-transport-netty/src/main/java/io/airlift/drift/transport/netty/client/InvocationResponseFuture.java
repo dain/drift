@@ -23,6 +23,7 @@ import io.airlift.drift.transport.client.ConnectionFailedException;
 import io.airlift.drift.transport.client.InvokeRequest;
 import io.airlift.drift.transport.netty.client.ConnectionManager.ConnectionParameters;
 import io.airlift.drift.transport.netty.client.ThriftClientHandler.ThriftRequest;
+import io.airlift.log.Logger;
 import io.netty.channel.Channel;
 import io.netty.util.concurrent.Future;
 
@@ -34,9 +35,12 @@ import static java.util.Objects.requireNonNull;
 class InvocationResponseFuture
         extends AbstractFuture<Object>
 {
+    private static final Logger log = Logger.get(InvocationResponseFuture.class);
+
     private final InvokeRequest request;
     private final ConnectionParameters connectionParameters;
     private final ConnectionManager connectionManager;
+    private final ThriftRequestTiming timing;
 
     @GuardedBy("this")
     private Future<Channel> connectionFuture;
@@ -57,6 +61,7 @@ class InvocationResponseFuture
         this.request = requireNonNull(request, "request is null");
         this.connectionParameters = requireNonNull(connectionParameters, "connectionConfig is null");
         this.connectionManager = requireNonNull(connectionManager, "connectionManager is null");
+        this.timing = new ThriftRequestTiming(request.getMethod().getName());
 
         // if this invocation is canceled, cancel the tasks
         super.addListener(() -> {
@@ -72,6 +77,7 @@ class InvocationResponseFuture
             connectionFuture = connectionManager.getConnection(connectionParameters, request.getAddress().getHostAndPort());
             connectionFuture.addListener(channelFuture -> {
                 try {
+                    timing.connected();
                     if (channelFuture.isSuccess()) {
                         // Netty future listener generic type declaration requires a cast when used with a lambda
                         tryInvocation((Channel) channelFuture.getNow());
@@ -99,13 +105,14 @@ class InvocationResponseFuture
         }
 
         try {
-            invocationFuture = new ThriftRequest(request.getMethod(), request.getParameters(), request.getHeaders());
+            invocationFuture = new ThriftRequest(request.getMethod(), request.getParameters(), request.getHeaders(), timing);
             channel.writeAndFlush(invocationFuture);
             Futures.addCallback(invocationFuture, new FutureCallback<Object>()
                     {
                         @Override
                         public void onSuccess(Object result)
                         {
+                            done(true);
                             try {
                                 connectionManager.returnConnection(channel);
                                 set(result);
@@ -146,6 +153,7 @@ class InvocationResponseFuture
         if (invocationFuture != null) {
             invocationFuture.cancel(wasInterrupted);
         }
+        done(false);
     }
 
     private void fatalError(Throwable throwable)
@@ -155,5 +163,18 @@ class InvocationResponseFuture
             throwable = new TException(throwable);
         }
         setException(throwable);
+        done(false);
+    }
+
+    private void done(boolean success)
+    {
+        if (timing.done()) {
+            log.info(timing.toTimingsLine(success));
+        }
+    }
+
+    public ThriftRequestTiming getTiming()
+    {
+        return timing;
     }
 }

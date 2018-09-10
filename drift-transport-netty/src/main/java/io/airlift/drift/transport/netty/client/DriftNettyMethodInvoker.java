@@ -74,11 +74,13 @@ class DriftNettyMethodInvoker
     {
         try {
             // be safe and make sure the future always completes
+            InvocationResponseFuture future = InvocationResponseFuture.createInvocationResponseFuture(request, connectionParameters, connectionManager);
             return MoreFutures.addTimeout(
-                    InvocationResponseFuture.createInvocationResponseFuture(request, connectionParameters, connectionManager),
+                    future,
                     () -> {
                         // log before throwing as this is likely a bug in Drift or Netty
-                        String message = "Invocation response future did not complete after " + invokeTimeout;
+                        String message = "Invocation response future did not complete after " + invokeTimeout +
+                                "\n    " + future.getTiming().toTimingsLine(false);
                         log.error(message);
                         throw new RequestTimeoutException(message);
                     },

@@ -137,6 +137,7 @@ public class ThriftClientHandler
                     transport,
                     protocol,
                     true);
+            thriftRequest.getTiming().requestEncoded();
 
             ChannelFuture sendFuture = context.write(thriftFrame, promise);
             sendFuture.addListener(future -> messageSent(context, sendFuture, requestHandler));
@@ -243,12 +244,14 @@ public class ThriftClientHandler
         private final MethodMetadata method;
         private final List<Object> parameters;
         private final Map<String, String> headers;
+        private final ThriftRequestTiming timing;
 
-        public ThriftRequest(MethodMetadata method, List<Object> parameters, Map<String, String> headers)
+        public ThriftRequest(MethodMetadata method, List<Object> parameters, Map<String, String> headers, ThriftRequestTiming timing)
         {
             this.method = method;
             this.parameters = parameters;
             this.headers = headers;
+            this.timing = timing;
         }
 
         MethodMetadata getMethod()
@@ -264,6 +267,11 @@ public class ThriftClientHandler
         public Map<String, String> getHeaders()
         {
             return headers;
+        }
+
+        public ThriftRequestTiming getTiming()
+        {
+            return timing;
         }
 
         boolean isOneway()
@@ -354,6 +362,7 @@ public class ThriftClientHandler
 
         void onRequestSent()
         {
+            thriftRequest.getTiming().requestSent();
             if (!thriftRequest.isOneway()) {
                 return;
             }
@@ -374,12 +383,14 @@ public class ThriftClientHandler
         void onResponseReceived(ThriftFrame thriftFrame)
         {
             try {
+                thriftRequest.getTiming().responseReceived();
                 if (!finished.compareAndSet(false, true)) {
                     return;
                 }
 
                 cancelRequestTimeout();
                 Object response = decodeResponse(thriftFrame.getMessage());
+                thriftRequest.getTiming().responseDecoded();
                 thriftRequest.setResponse(response);
             }
             catch (Throwable throwable) {

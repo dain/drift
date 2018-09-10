@@ -95,6 +95,7 @@ import static java.util.Collections.nCopies;
 import static java.util.concurrent.Executors.newSingleThreadScheduledExecutor;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
 public class TestDriftNettyMethodInvoker
@@ -362,7 +363,7 @@ public class TestDriftNettyMethodInvoker
         }
         catch (ExecutionException e) {
             assertInstanceOf(e.getCause(), io.airlift.drift.TException.class);
-            assertEquals(e.getCause().getMessage(), "Invocation response future did not complete after 41.00ms");
+            assertTrue(e.getCause().getMessage().startsWith("Invocation response future did not complete after 41.00ms\n    TIMELINE:"));
         }
         finally {
             executor.shutdown();
